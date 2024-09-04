@@ -109,11 +109,11 @@ static int hunter_decode(r_device *decoder, bitbuffer_t *bitbuffer)
      */
     uint8_t c[2];
     bitbuffer_extract_bytes(bitbuffer, r, start_pos+42, c, 12);
-    int command = c[0]<8 | c[1];
+    int command = c[0] << 8 | c[1];
 
     uint8_t ic[2];
     bitbuffer_extract_bytes(bitbuffer, r, start_pos+4+12, ic, 12);
-    int icommand = ic[0]<8 | ic[1];
+    int icommand = ic[0] << 8 | ic[1];
 
     // Command & inverse command should mask eachother out and result in 0
     if (command & icommand) {
@@ -129,13 +129,13 @@ static int hunter_decode(r_device *decoder, bitbuffer_t *bitbuffer)
      */
     uint8_t id[6];
     bitbuffer_extract_bytes(bitbuffer, r, start_pos, id, 42);
-    char remote_id[12];
+    char remote_id[13];
     sprintf(remote_id, "%02X%02X%02X%02X%02X%02X", id[0], id[1], id[2], id[3], id[4], id[5]);
 
 
     uint8_t value[9];
     bitbuffer_extract_bytes(bitbuffer, r, start_pos, id, HUNTER_BITLEN - HUNTER_PREAMBLE_BITLEN);
-    char value_string[18];
+    char value_string[19];
     sprintf(value_string, "%02X%02X%02X%02X%02X%02X%02X%02X%02X", value[0], value[1], value[2], value[3], value[4], value[5], value[6], value[7], value[8]);
 
 
