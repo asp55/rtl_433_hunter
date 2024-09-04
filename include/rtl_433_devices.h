@@ -271,6 +271,7 @@
     DECL(geevon) \
     DECL(fineoffset_wh46) \
     DECL(vevor_7in1) \
+    DECL(hunter) \
 
     /* Add new decoders here. */
 

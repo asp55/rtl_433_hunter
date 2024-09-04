@@ -142,6 +142,7 @@ add_library(r_433 STATIC
     devices/honeywell_cm921.c
     devices/honeywell_wdb.c
     devices/ht680.c
+    devices/hunter.c
     devices/ibis_beacon.c
     devices/ikea_sparsnas.c
     devices/infactory.c
