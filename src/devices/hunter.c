@@ -134,7 +134,7 @@ static int hunter_decode(r_device *decoder, bitbuffer_t *bitbuffer)
 
 
     uint8_t value[9];
-    bitbuffer_extract_bytes(bitbuffer, r, start_pos, id, HUNTER_BITLEN - HUNTER_PREAMBLE_BITLEN);
+    bitbuffer_extract_bytes(bitbuffer, r, start_pos, value, HUNTER_BITLEN - HUNTER_PREAMBLE_BITLEN);
     char value_string[19];
     sprintf(value_string, "%02X%02X%02X%02X%02X%02X%02X%02X%02X", value[0], value[1], value[2], value[3], value[4], value[5], value[6], value[7], value[8]);
 
