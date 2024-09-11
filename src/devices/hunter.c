@@ -42,15 +42,16 @@ The message consists of:
 
 
 Data layout:
-    PPPPPPPP PPPPIIII IIIIIIII IIIIIIII IIIIIIII IIIIIIII IIIIIICC CCCCCCCC CCKKKKKK KKKKKK
+    PPPPPPPP PPPP1III IIIIIIII IIIIIIII IIIIIIII IIIIIIII IIIII00C CCCCCCCC C11KKKKK KKKKK0
 
 - P: 12-bit preamble
-- I: 42-bit remote id
-- C: 12-bit command
-- K: 12-bit inverse command
+- I: 40-bit remote id
+- C: 10-bit command
+- K: 10-bit inverse command
 */
 
 #include "decoder.h"
+
 
 /*
  * Message is 78 bits long
@@ -63,49 +64,59 @@ Data layout:
 #define HUNTER_MINREPEATS 2
 
 
+
 static int hunter_decode(r_device *decoder, bitbuffer_t *bitbuffer)
 {
+
+
     data_t *data;
 
     int result = 0;
 
     /*
-     * Early debugging aid to see demodulated bits in buffer and
-     * to determine if your limit settings are matched and firing
-     * this decode callback.
-     *
-     * 1. Enable with -vvv (debug decoders)
-     * 2. Delete this block when your decoder is working
+     * invert the whole bit buffer.
      */
-    decoder_log_bitbuffer(decoder, 2, __func__, bitbuffer, "");
+    bitbuffer_invert(bitbuffer);
 
 
-    uint8_t const preamble_pattern[] = {0xff, 0xf0}; // 12 bit preamble
+    uint8_t const preamble_pattern[] = {0x00, 0x0f}; // 12 bit preamble
 
     for (int row = 0; row < bitbuffer->num_rows; ++row) {
-        unsigned start_pos = bitbuffer_search(bitbuffer, row, 0, preamble_pattern, 12);
+        unsigned start_pos = bitbuffer_search(bitbuffer, row, 0, preamble_pattern, HUNTER_PREAMBLE_BITLEN);
         start_pos += 12; // skip preamble
 
-        if ((bitbuffer->bits_per_row[row] - start_pos) < HUNTER_BITLEN - HUNTER_PREAMBLE_BITLEN) {
-            // short buffer or preamble not found
+        if (start_pos > bitbuffer->bits_per_row[row]) {
+            //preamble not found
             //return DECODE_ABORT_LENGTH; 
             decoder_log(decoder, 1, __func__, "no preamble");
             continue;
         }
 
+        if((bitbuffer->bits_per_row[row] - start_pos) < (HUNTER_BITLEN - HUNTER_PREAMBLE_BITLEN)) {
+            //Message too short
+            //return DECODE_ABORT_LENGTH; 
+            decoder_log(decoder, 1, __func__, "short message");
+            continue;
+
+        }
+
+        //Flip the bits
+
         /*
         * Get the command and inverse command from the message to check for message integrity
         */
         uint8_t c[2];
-        bitbuffer_extract_bytes(bitbuffer, row, start_pos+42, c, 12);
+        bitbuffer_extract_bytes(bitbuffer, row, start_pos+43, c, 10);
         int command = c[0] << 8 | c[1];
+        command = command >> 6; // Remove the right padding
 
         uint8_t ic[2];
-        bitbuffer_extract_bytes(bitbuffer, row, start_pos+42+12, ic, 12);
+        bitbuffer_extract_bytes(bitbuffer, row, start_pos+43+10+2, ic, 10);
         int icommand = ic[0] << 8 | ic[1];
+        icommand = icommand >> 6;  // Remove the right padding
 
         // Command & inverse command should mask eachother out and result in 0
-        if (command & icommand) {
+        if ((command & icommand) != 0 || (command | icommand) != 1023) {
             // Enable with -vv (verbose decoders)
             decoder_log(decoder, 1, __func__, "bad message");
             //return DECODE_FAIL_SANITY;
@@ -118,19 +129,108 @@ static int hunter_decode(r_device *decoder, bitbuffer_t *bitbuffer)
         result = 1;
 
         /*
-        * Now that we know the message is good, grab the id & full message
+        * Now that we know the message is good, grab the id
         */
-        uint8_t id[6];
-        bitbuffer_extract_bytes(bitbuffer, row, start_pos, id, 42);
-        char remote_id[13];
-        sprintf(remote_id, "%02X%02X%02X%02X%02X%02X", id[0], id[1], id[2], id[3], id[4], id[5]);
+        uint8_t id[5];
+        bitbuffer_extract_bytes(bitbuffer, row, start_pos+1, id, 40);
 
-        /*
-        uint8_t value[9];
-        bitbuffer_extract_bytes(bitbuffer, r, start_pos, value, HUNTER_BITLEN - HUNTER_PREAMBLE_BITLEN);
-        char value_string[19];
-        sprintf(value_string, "%02X%02X%02X%02X%02X%02X%02X%02X%02X", value[0], value[1], value[2], value[3], value[4], value[5], value[6], value[7], value[8]);
-        */
+        char remote_id[11];
+        sprintf(remote_id, "%02X%02X%02X%02X%02X", id[0], id[1], id[2], id[3], id[4]);
+
+        char target_string[] = "Unknown";
+        char action_string[17] = "Unknown";
+
+        if(
+          command == 4 ||
+          command == 32 ||
+          command == 35 ||
+          command == 64 ||
+          command == 98
+        ) {
+          sprintf(target_string, "Fan");
+
+          switch(command) {
+            case 4:
+              sprintf(action_string, "Speed 33%%");
+              break;
+
+            case 32:
+              sprintf(action_string, "Speed 66%%");
+              break;
+
+            case 64:
+              sprintf(action_string, "Speed 100%%");
+              break;
+
+            case 35:
+              sprintf(action_string, "Toggle");
+              break;
+
+            case 98:
+              sprintf(action_string, "Off");
+              break;
+          }
+        }
+        else if(
+          command == 10 ||
+          command == 11 ||
+          command == 12 ||
+          command == 13 ||
+          command == 14 ||
+          command == 15 ||
+          command == 72 ||
+          command == 73 ||
+          command == 138 ||
+          command == 266 ||
+          command == 768
+        ) {
+          sprintf(target_string, "Light");
+          switch(command) {
+            case 10:
+              sprintf(action_string, "Brightness 12.5%%");
+              break;
+
+            case 11:
+              sprintf(action_string, "Brightness 25%%");
+              break;
+
+            case 12:
+              sprintf(action_string, "Brightness 37.5%%");
+              break;
+
+            case 13:
+              sprintf(action_string, "Brightness 50%%");
+              break;
+
+            case 14:
+              sprintf(action_string, "Brightness 62.5%%");
+              break;
+
+            case 15:
+              sprintf(action_string, "Brightness 75%%");
+              break;
+
+            case 72:
+              sprintf(action_string, "Brightness 87.5%%");
+              break;
+
+            case 73:
+              sprintf(action_string, "Brightness 100%%");
+              break;
+
+            case 138:
+              sprintf(action_string, "On");
+              break;
+
+            case 266:
+              sprintf(action_string, "Off");
+              break;
+
+            case 768:
+              sprintf(action_string, "Toggle");
+              break;	
+          }
+        }
 
 
         /* clang-format off */
@@ -138,10 +238,13 @@ static int hunter_decode(r_device *decoder, bitbuffer_t *bitbuffer)
                 "model", "", DATA_STRING, "Hunter",
                 "id",    "", DATA_STRING, remote_id,
                 "command", "", DATA_INT,  command,
-                // "data",  "", DATA_STRING, value_string,
+                "target", "", DATA_STRING,  target_string,
+                "action", "", DATA_STRING,  action_string,
                 NULL);
         /* clang-format on */
         decoder_output_data(decoder, data);
+
+
     }
 
 
@@ -164,7 +267,8 @@ static char const *const output_fields[] = {
         "model",
         "id",
         "command",
-        // "data",
+        "target",
+        "action",
         NULL,
 };
 
